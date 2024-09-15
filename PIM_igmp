@@ -1,0 +1,104 @@
+this is a less-specific answer and just some general multicast info I wrote up for a coworker once:
+
+General & Routers
+2 Main Protocols
+
+PIM - the routing protocol for multicast
+
+IGMP - the group join protocol from clients
+
+PIM
+
+2 modes
+
+Sparse Mode = the "Hey, I want this!" method
+
+Dense Mode = floods the entire topology. Horribly inefficient. The "push" method of multicast routing. Not supported on NX-OS anyway.
+
+Sparse Mode
+
+Requires a Rendezvous Point. This is where all multicast sources will register/advertise their streams.
+
+** Even the RP router needs to be configured !! **
+
+3 ways to elect the RP
+
+Manually
+
+BSR
+
+AutoRP
+
+Manual RP:
+
+Router(config)# ip pim rp-address <RP_ADDY>
+
+AutoRP / BSR
+
+(requires...multicast. WTF, Cisco?).
+
+3 ways to make it work
+
+Use the magic command below *best practice
+
+use ip pim sparse-dense mode. Yuck.
+
+statically assign the autorp groups. Yuck.
+
+2 Parts
+
+Candidate-RP (Router that wants to be RP)
+
+Mapping Agent (Router whose job is to tell everyone else)
+
+These commands can be on different routers or the same. Each requires a 'scope' or number of Hops to advertise out.
+
+Uses 224.0.1.40
+
+Requires a magic command (on all routers!):
+
+Router(config)# ip pim autorp listener
+
+On NX-OS, ip multicast routing will not be enabled until you manually put PIM on an interface.
+
+Testing
+I discovered that you can test multicast traffic pretty easily.
+
+First, on the interface where you want to simulate a client that wants to join the multicast, do an:
+
+Router(config-if)# ip igmp join-group <RP_ADDY>
+Then, on the router with the multicast source, ping the multicast ip address, sourced from the multicast host/source interface. You should get a response back from the interface you join-grouped on.
+
+NEXUS CAVEAT. Apparently there is a potential issue with join-group. (Heres the link). You basically have to run a slightly different command. I'm not sure if this applies to you or not.
+
+Some useful commands
+Router# show ip mroute
+Router# show ip mroute active
+Router# show ip mroute count
+
+Router# show ip pim group <multicast_address>
+Router# show ip pim rp
+Router# show ip pim rp mapping
+
+Router# show ip pim interface count  
+
+Router# show ip igmp groups
+Switches
+IGMP Snooping is used when there is no multicast router. It assumed that the multicast traffic never leaves the switch. By default, switches treat multicast like broadcast, and flood all ports. Enabling igmp snooping allows the switch "peek" at the L3 destinations and then setup who needs the IGMP. You can do this by vlan or globally. CGMP is another protocol that can do a similar thing, but it doesn't really matter.
+
+IGMP has some different options based on which version you're running, v1, 2, or 3. The important thing to note is that in 2 or 3, there are settings for leaving the multicast group, vs v1 that uses a 60second reminder timer. If this is misconfigured, you could have devices dropping incorrectly. Just a heads up. V3 is definitely best, if you can.
+
+I wouldn't get too caught up on the DR. PIM auto elects it and uses it to prevent multiple joins from the same segment. I doubt its your issue.
+
+What would I check?
+First make sure that your stuff is all in sparse mode.
+
+Check to see if the Rendezvous Point is configured, and how...autorp vs manual.
+
+My network isn't large enough to justify autorp, so I'm gonna go through my config and set everything manually. My goal is to use HSRP, so I'll point my RP to the VIP and hope that works. If not, autorp here I come.
+
+Because of Nexus, you'll need to make sure you have pim enabled on an interface (explicitly) before ip multicast-routing is working on all routers
+
+Next, try: on Spare, do an igmp join, followed by a ping on Core, sourced from a different interface on Core.
+
+Once that's working, you can add igmp snooping to your switches and redo ping testing until you get it working
